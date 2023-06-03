@@ -14,11 +14,13 @@
 
         <SeekBar
             android:id="@+id/setThickness"
-            android:layout_width="140dp"
+            android:layout_width="100dp"
             android:layout_height="wrap_content"
             android:max="50"
             android:layout_marginLeft="10dp"
             android:layout_marginRight="10dp"
+            android:layout_weight="1"
+            android:padding="1dp"
             />
 
         <Button
@@ -26,7 +28,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginLeft="5dp"
-            android:text="Цвет" />
+            android:text="Цвет"
+            android:layout_weight="1"
+            android:padding="1dp"/>
         <Button
             android:id="@+id/btnClear"
             android:layout_width="wrap_content"
@@ -34,7 +38,27 @@
             android:layout_marginLeft="5dp"
             android:text="Очистить"
             android:singleLine="true"
+            android:layout_weight="1"
+            android:padding="1dp"
             />
+        <Button
+            android:id="@+id/btnPickImage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="5dp"
+            android:text="Добавить"
+            android:layout_weight="1"
+            android:padding="1dp"/>
+
+        <Button
+            android:id="@+id/saveImage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="5dp"
+            android:text="Сохранить"
+            android:layout_weight="1"
+            android:padding="1dp"/>
+
     </LinearLayout>
 
     <LinearLayout

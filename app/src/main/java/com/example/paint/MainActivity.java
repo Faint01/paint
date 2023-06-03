@@ -1,29 +1,41 @@
 package com.example.paint;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.Toast;
+import java.io.IOException;
 
 import com.jaredrummler.android.colorpicker.ColorPickerDialog;
 import com.jaredrummler.android.colorpicker.ColorPickerDialogListener;
 import com.jaredrummler.android.colorpicker.ColorShape;
 
 public class MainActivity extends AppCompatActivity implements ColorPickerDialogListener {
-    private MyPaintView myView;;
+    private static final int REQUEST_CODE_PICK_IMAGE = 101;
+    private MyPaintView myView;
+    private  Bitmap imageBitmap;
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -56,6 +68,16 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
         btnColor.setOnClickListener(view -> {
             createColorPickerDialog();
         });
+
+        Button btnPickImage = findViewById(R.id.btnPickImage);
+        btnPickImage.setOnClickListener(v -> {
+            pickImageFromGallery();
+        });
+
+        Button btnSaveImage = findViewById(R.id.saveImage);
+        btnSaveImage.setOnClickListener(v -> {
+            saveImageToGallery();
+        });
     }
 
 
@@ -77,11 +99,77 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
     public void onDialogDismissed(int dialogId) {
         Toast.makeText(this, "Dialog dismissed", Toast.LENGTH_SHORT).show();
     }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    private void pickImageFromGallery(){
+        if(checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED){
+            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE} , REQUEST_CODE_PICK_IMAGE);
+        } else {
+            Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+            intent.setType("image/*");
+            startActivityForResult(intent, REQUEST_CODE_PICK_IMAGE);
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    private void saveImageToGallery(){
+        if(checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED){
+            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CODE_PICK_IMAGE);
+        } else {
+            String savedImageURL = MediaStore.Images.Media.insertImage(
+                    getContentResolver(),
+                    myView.mBitmap,
+                    "Painting",
+                    "Image created by MyPaintApp"
+            );
+
+            if(savedImageURL !=null){
+                Toast.makeText(this , "Image saved to Gallery" , Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this , "Failed to save image" , Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if(requestCode == REQUEST_CODE_PICK_IMAGE){
+            if(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED){
+                pickImageFromGallery();
+            } else {
+                Toast.makeText(this , "Permission denied", Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == REQUEST_CODE_PICK_IMAGE) {
+            if(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED){
+                saveImageToGallery();
+            } else{
+                Toast.makeText(this , "Permission denied", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode == REQUEST_CODE_PICK_IMAGE && resultCode == RESULT_OK && data != null){
+            Uri selectedImageUri = data.getData();
+            try {
+                imageBitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), selectedImageUri);
+                myView.setBackgroundImage(imageBitmap);
+            } catch (IOException e){
+                e.printStackTrace();
+            }
+        }
+    }
+
     private static class MyPaintView extends View {
         private Bitmap mBitmap;
         private Canvas mCanvas;
         private final Path mPath;
         private final Paint mPaint;
+        private Bitmap mbackgroundBitmap;
         public MyPaintView(Context context) {
             super(context);
             mPath = new Path();
@@ -92,6 +180,9 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
             mPaint.setStyle(Paint.Style.STROKE);
         }
 
+        public void setBackgroundImage(Bitmap backgroundBitmap){
+            mbackgroundBitmap = backgroundBitmap;
+        }
         @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
@@ -100,7 +191,10 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
         }
         @Override
         protected void onDraw(Canvas canvas) {
-            canvas.drawBitmap(mBitmap, 0, 0, null);
+            if (mbackgroundBitmap != null) {
+                canvas.drawBitmap(mbackgroundBitmap , 0, 0, null);
+            }
+
             canvas.drawPath(mPath, mPaint);
         }
 
