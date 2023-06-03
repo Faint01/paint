@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -26,6 +27,7 @@ import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.Toast;
 import java.io.IOException;
+import java.io.InputStream;
 
 import com.jaredrummler.android.colorpicker.ColorPickerDialog;
 import com.jaredrummler.android.colorpicker.ColorPickerDialogListener;
@@ -156,8 +158,9 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
         if(requestCode == REQUEST_CODE_PICK_IMAGE && resultCode == RESULT_OK && data != null){
             Uri selectedImageUri = data.getData();
             try {
-                imageBitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), selectedImageUri);
-                myView.setBackgroundImage(imageBitmap);
+                InputStream inputStream = getContentResolver().openInputStream(selectedImageUri);
+                Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
+                myView.setBackgroundImage(bitmap);
             } catch (IOException e){
                 e.printStackTrace();
             }
@@ -170,6 +173,7 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
         private final Path mPath;
         private final Paint mPaint;
         private Bitmap mbackgroundBitmap;
+        private  Canvas mbackgroundCanvas;
         public MyPaintView(Context context) {
             super(context);
             mPath = new Path();
@@ -180,21 +184,31 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
             mPaint.setStyle(Paint.Style.STROKE);
         }
 
-        public void setBackgroundImage(Bitmap backgroundBitmap){
-            mbackgroundBitmap = backgroundBitmap;
+        public void setBackgroundImage(Bitmap bitmap){
+            mbackgroundBitmap = bitmap;
+            float scaleFactor = Math.min(
+                    (float) getWidth() / mbackgroundBitmap.getWidth(),
+                    (float) getHeight() / mbackgroundBitmap.getHeight()
+            );
+            int newWidth = (int) (mbackgroundBitmap.getWidth() * scaleFactor);
+            int newHeight = (int) (mbackgroundBitmap.getHeight() * scaleFactor);
+            mbackgroundBitmap = Bitmap.createScaledBitmap(mbackgroundBitmap, newWidth , newHeight , true);
+            mCanvas.drawBitmap(mbackgroundBitmap, 0, 0, null);
+            mCanvas.drawPath(mPath, mPaint);
+            invalidate();
         }
         @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
             mBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            mbackgroundBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             mCanvas = new Canvas(mBitmap);
+            mbackgroundCanvas = new Canvas(mbackgroundBitmap);
         }
         @Override
         protected void onDraw(Canvas canvas) {
-            if (mbackgroundBitmap != null) {
-                canvas.drawBitmap(mbackgroundBitmap , 0, 0, null);
-            }
-
+            canvas.drawBitmap(mbackgroundBitmap , 0, 0, null);
+            canvas.drawBitmap(mBitmap, 0, 0, null);
             canvas.drawPath(mPath, mPaint);
         }
 
@@ -212,14 +226,12 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
                     break;
                 case MotionEvent.ACTION_UP:
                     mPath.lineTo(x, y);
-                    mCanvas.drawPath(mPath, mPaint);
+                    mCanvas.drawPath(mPath , mPaint);
                     mPath.reset();
                     break;
             }
-            this.invalidate();
+            invalidate();
             return true;
         }
-
-
     }
 }
