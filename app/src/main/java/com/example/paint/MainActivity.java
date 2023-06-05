@@ -15,6 +15,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PointF;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -37,6 +38,10 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
     private static final int REQUEST_CODE_PICK_IMAGE = 101;
     private MyPaintView myView;
     private  Bitmap imageBitmap;
+
+    private float mScaleFactor = 1.0f;
+    private boolean isScalingEnabled = false;
+
     @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,6 +85,17 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
         btnSaveImage.setOnClickListener(v -> {
             saveImageToGallery();
         });
+
+        Button btnScale =findViewById(R.id.btnScale);
+        btnScale.setOnClickListener(view ->{
+            if(myView.isZoomEnabled){
+                myView.setZoomEnabled(false);
+                btnScale.setText("Включить масштабирование");
+            } else {
+                myView.setZoomEnabled(true);
+                btnScale.setText("Выключить масштабирование");
+            }
+        });
     }
 
 
@@ -115,21 +131,8 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     private void saveImageToGallery(){
-        if(checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED){
-            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CODE_PICK_IMAGE);
-        } else {
-            String savedImageURL = MediaStore.Images.Media.insertImage(
-                    getContentResolver(),
-                    myView.mBitmap,
-                    "Painting",
-                    "Image created by MyPaintApp"
-            );
-
-            if(savedImageURL !=null){
-                Toast.makeText(this , "Image saved to Gallery" , Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this , "Failed to save image" , Toast.LENGTH_SHORT).show();
-            }
+        if (myView != null) {
+            myView.saveCanvasWithImage();
         }
     }
 
@@ -167,13 +170,47 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
         }
     }
 
+    private void scaleImage(){
+
+    }
+
     private static class MyPaintView extends View {
+
+        private float mInitialDistance = 0f;
+        private float mScaleFactor = 1f;
+        private float mFocusX;
+        private float mFocusY;
+
         private Bitmap mBitmap;
         private Canvas mCanvas;
         private final Path mPath;
         private final Paint mPaint;
+
+        private float mPosX;
+        private float mPosY;
+        private float mLastTouchX;
+        private float mLastTouchY;
+
+        private PointF mMiddlePoint;
+
+        private float mLastScaleFactor = 1f;
+
+        private static final float TOUCH_TOLERANCE = 4;
+        private static final float MIN_SCALE_FACTOR = 0.1f;
+        private static final float MAX_SCALE_FACTOR = 2f;
+
+        private boolean isDrawingEnabled = true;
+        private boolean isZoomEnabled = false;
+        private boolean isMoving = false;
         private Bitmap mbackgroundBitmap;
         private  Canvas mbackgroundCanvas;
+
+        private float initialDistance;
+        private float initialImageDistance;
+
+
+
+
         public MyPaintView(Context context) {
             super(context);
             mPath = new Path();
@@ -181,7 +218,15 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
             mPaint.setColor(Color.RED);
             mPaint.setAntiAlias(true);
             mPaint.setStrokeWidth(10);
+            mPaint.setStrokeJoin(Paint.Join.ROUND);
+            mPaint.setStrokeCap(Paint.Cap.ROUND);
             mPaint.setStyle(Paint.Style.STROKE);
+
+            mMiddlePoint = new PointF();
+        }
+
+        public void setZoomEnabled(Boolean enabled){
+            isZoomEnabled = enabled;
         }
 
         public void setBackgroundImage(Bitmap bitmap){
@@ -193,10 +238,31 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
             int newWidth = (int) (mbackgroundBitmap.getWidth() * scaleFactor);
             int newHeight = (int) (mbackgroundBitmap.getHeight() * scaleFactor);
             mbackgroundBitmap = Bitmap.createScaledBitmap(mbackgroundBitmap, newWidth , newHeight , true);
-            mCanvas.drawBitmap(mbackgroundBitmap, 0, 0, null);
-            mCanvas.drawPath(mPath, mPaint);
+            mbackgroundCanvas.drawBitmap(mbackgroundBitmap, 0, 0, null);
+            mbackgroundCanvas.drawPath(mPath, mPaint);
             invalidate();
         }
+
+        public void saveCanvasWithImage() {
+            Bitmap combinedBitmap = Bitmap.createBitmap(getWidth(), getHeight(), Bitmap.Config.ARGB_8888);
+            Canvas combinedCanvas = new Canvas(combinedBitmap);
+            combinedCanvas.drawBitmap(mbackgroundBitmap, 0, 0, null);
+            combinedCanvas.drawBitmap(mBitmap, 0, 0, null);
+
+            String savedImageURL = MediaStore.Images.Media.insertImage(
+                    getContext().getContentResolver(),
+                    combinedBitmap,
+                    "MyPaintImage",
+                    "Combined image of canvas and background image"
+            );
+
+            if (savedImageURL != null) {
+                Toast.makeText(getContext(), "Изображение сохранено", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(getContext(), "Не удалось сохранить изображение", Toast.LENGTH_SHORT).show();
+            }
+        }
+
         @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
@@ -204,34 +270,122 @@ public class MainActivity extends AppCompatActivity implements ColorPickerDialog
             mbackgroundBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             mCanvas = new Canvas(mBitmap);
             mbackgroundCanvas = new Canvas(mbackgroundBitmap);
+
+            if (mbackgroundBitmap != null) {
+                float scaleFactor = Math.min(
+                        (float) w / mbackgroundBitmap.getWidth(),
+                        (float) h / mbackgroundBitmap.getHeight()
+                );
+                int newWidth = (int) (mbackgroundBitmap.getWidth() * scaleFactor);
+                int newHeight = (int) (mbackgroundBitmap.getHeight() * scaleFactor);
+                mbackgroundBitmap = Bitmap.createScaledBitmap(mbackgroundBitmap, newWidth, newHeight, true);
+                mbackgroundCanvas.drawBitmap(mbackgroundBitmap, 0, 0, null);
+                mbackgroundCanvas.drawPath(mPath, mPaint);
+                mLastScaleFactor = mScaleFactor;
+            }
         }
+
+        private void midPoint(PointF point, MotionEvent event) {
+            float x = event.getX(0) + event.getX(1);
+            float y = event.getY(0) + event.getY(1);
+            point.set(x / 2, y / 2);
+        }
+
+
         @Override
         protected void onDraw(Canvas canvas) {
-            canvas.drawBitmap(mbackgroundBitmap , 0, 0, null);
+            canvas.save();
+            canvas.scale(mScaleFactor, mScaleFactor, mMiddlePoint.x, mMiddlePoint.y);
+            canvas.translate(mPosX, mPosY);
+            canvas.drawBitmap(mbackgroundBitmap, 0, 0, null);
             canvas.drawBitmap(mBitmap, 0, 0, null);
             canvas.drawPath(mPath, mPaint);
+            canvas.restore();
         }
+
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            int x = (int) event.getX();
-            int y = (int) event.getY();
-            switch (event.getAction()) {
+            if (!isDrawingEnabled && !isZoomEnabled) {
+                return super.onTouchEvent(event);
+            }
+
+            float x = event.getX();
+            float y = event.getY();
+
+            switch (event.getAction() & MotionEvent.ACTION_MASK) {
                 case MotionEvent.ACTION_DOWN:
-                    mPath.reset();
-                    mPath.moveTo(x, y);
+                    isMoving = false;
+                    mLastTouchX = x;
+                    mLastTouchY = y;
+                    if (isDrawingEnabled) {
+                        mPath.reset();
+                        mPath.moveTo(x, y);
+                    }
+                    break;
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    if (isZoomEnabled) {
+                        mInitialDistance = calculateDistance(event);
+                        midPoint(mMiddlePoint, event);
+                    }
+                    isDrawingEnabled = false;
                     break;
                 case MotionEvent.ACTION_MOVE:
-                    mPath.lineTo(x, y);
+                    if (isZoomEnabled && event.getPointerCount() == 2) {
+                        // Масштабирование
+                        float newDistance = calculateDistance(event);
+                        float scaleFactor = newDistance / mInitialDistance;
+
+                        // Применение ограничений на масштабирование
+                        if (scaleFactor < MIN_SCALE_FACTOR) {
+                            scaleFactor = MIN_SCALE_FACTOR;
+                        } else if (scaleFactor > MAX_SCALE_FACTOR) {
+                            scaleFactor = MAX_SCALE_FACTOR;
+                        }
+
+                        mScaleFactor *= scaleFactor;
+                        mScaleFactor = Math.max(MIN_SCALE_FACTOR, Math.min(mScaleFactor, MAX_SCALE_FACTOR));
+
+                        mLastTouchX = x;
+                        mLastTouchY = y;
+
+                        invalidate();
+                    } else if (isDrawingEnabled) {
+                        // Рисование
+                        float dx = Math.abs(x - mLastTouchX);
+                        float dy = Math.abs(y - mLastTouchY);
+                        if (dx >= TOUCH_TOLERANCE || dy >= TOUCH_TOLERANCE) {
+                            mPath.quadTo(mLastTouchX, mLastTouchY, (x + mLastTouchX) / 2, (y + mLastTouchY) / 2);
+                            mCanvas.drawPath(mPath, mPaint);
+                            mPath.reset();
+                            mPath.moveTo(mLastTouchX, mLastTouchY);
+                            mLastTouchX = x;
+                            mLastTouchY = y;
+                        }
+                        invalidate();
+                    }
                     break;
+
                 case MotionEvent.ACTION_UP:
-                    mPath.lineTo(x, y);
-                    mCanvas.drawPath(mPath , mPaint);
-                    mPath.reset();
+                    if (!isMoving && isDrawingEnabled) {
+                        mPath.lineTo(x, y);
+                        mCanvas.drawPath(mPath, mPaint);
+                        mPath.reset();
+                        invalidate();
+                    }
+                    isMoving = false;
+                    isDrawingEnabled = true; // Включаем режим рисования
+                    break;
+                case MotionEvent.ACTION_POINTER_UP:
                     break;
             }
-            invalidate();
             return true;
+        }
+
+        private float calculateDistance(MotionEvent event) {
+            float dx = event.getX(0) - event.getX(1);
+            float dy = event.getY(0) - event.getY(1);
+            return (float) Math.sqrt(dx * dx + dy * dy);
         }
     }
 }
